@@ -1,0 +1,38 @@
+version: '3.8' # Docker Composeファイルのバージョン
+
+services:
+  openhands:
+    image: docker.all-hands.dev/all-hands-ai/openhands:0.19 # 動作確認済みのOpenHandsイメージバージョン
+    container_name: openhands-app # 起動するコンテナに付ける名前
+    ports:
+      - "3000:3000" # ホストの3000番ポートとコンテナの3000番ポートを接続
+    environment:
+      # OpenHandsのエージェントがサンドボックスコンテナを起動する際に使用するランタイムイメージ
+      - SANDBOX_RUNTIME_CONTAINER_IMAGE=docker.all-hands.dev/all-hands-ai/runtime:0.19-nikolaik
+      # すべてのイベントをログに出力するかどうか（デバッグに便利）
+      - LOG_ALL_EVENTS=true
+      # ホストのユーザーIDをコンテナに渡し、権限問題を回避 (あなたのUID: 501を直接指定)
+      - SANDBOX_USER_ID=501
+      # コンテナ内の作業ディレクトリのパスを環境変数として渡す
+      # 0.19ではこのパスが重要になる可能性があります
+      - WORKSPACE_MOUNT_PATH=/opt/workspace_base
+      # ★★★ ここにLLMのAPIキーを設定してください ★★★
+      # 例: OpenAIのAPIキー
+      # - OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      # 例: AnthropicのAPIキー
+      # - ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      # 例: GoogleのAPIキー (Geminiを使用する場合)
+      # - GOOGLE_API_KEY=AIzaSyxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    volumes:
+      # Dockerソケットをマウントし、OpenHandsがサンドボックスコンテナを起動できるようにする（必須）
+      - /var/run/docker.sock:/var/run/docker.sock
+      # OpenHandsの内部状態（セッション、ログなど）をホストに永続化 (0.19では ~/.openhands-state を使用)
+      - ~/.openhands-state:/.openhands-state
+      # ★ ホストの作業ディレクトリをコンテナ内にマウントし、ファイル共有を可能にする ★
+      # ホストの `$HOME/Documents/prj/lineage-flow` をコンテナ内の `/opt/workspace_base` にマウント
+      - ${HOME}/Documents/prj/lineage-flow:/opt/workspace_base
+    extra_hosts:
+      # Docker Desktop環境などでホストのIPアドレスを解決するための設定
+      - "host.docker.internal:host-gateway"
+    # コンテナの初回起動時やイメージ更新時に自動的にpullするように設定
+    pull_policy: always
