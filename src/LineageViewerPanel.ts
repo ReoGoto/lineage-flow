@@ -1,5 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as crypto from 'crypto';
+
+function getNonce() {
+    return crypto.randomBytes(16).toString('base64');
+}
 
 export class LineageViewerPanel {
     public static currentPanel: LineageViewerPanel | undefined;
@@ -53,7 +58,8 @@ export class LineageViewerPanel {
             {
                 enableScripts: true,
                 localResourceRoots: [
-                    vscode.Uri.joinPath(extensionUri, 'src', 'webview')
+                    vscode.Uri.joinPath(extensionUri, 'src', 'webview'),
+                    vscode.Uri.joinPath(extensionUri, 'node_modules')
                 ]
             }
         );
@@ -62,15 +68,124 @@ export class LineageViewerPanel {
     }
 
     private _getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
-        const htmlPath = vscode.Uri.joinPath(extensionUri, 'src', 'webview', 'lineageViewer.html');
-        let htmlContent = '';
-        try {
-            htmlContent = require('fs').readFileSync(htmlPath.fsPath, 'utf8');
-        } catch (err) {
-            console.error('Error reading HTML file:', err);
-            return 'Error loading webview content';
+        // Get the local path to vis-network
+        const visNetworkPath = vscode.Uri.joinPath(extensionUri, 'node_modules', 'vis-network', 'standalone', 'umd', 'vis-network.min.js');
+        const visNetworkUri = webview.asWebviewUri(visNetworkPath);
+
+        // Use CSP to allow loading local resources
+        const nonce = getNonce();
+
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}';">
+    <title>Data Lineage Viewer</title>
+    <script nonce="${nonce}" type="text/javascript" src="${visNetworkUri}"></script>
+    <style>
+        body, html {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
         }
-        return htmlContent;
+        #network {
+            width: 100%;
+            height: 100%;
+            background-color: var(--vscode-editor-background);
+        }
+        .vis-network {
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="network"></div>
+    <script nonce="${nonce}">
+        (function() {
+            const vscode = acquireVsCodeApi();
+
+            // Create a data object with nodes and edges
+            const nodes = new vis.DataSet([]);
+            const edges = new vis.DataSet([]);
+
+            // Create a network
+            const container = document.getElementById('network');
+            const data = {
+                nodes: nodes,
+                edges: edges
+            };
+            const options = {
+                nodes: {
+                    shape: 'box',
+                    margin: 10,
+                    font: {
+                        color: 'var(--vscode-editor-foreground)'
+                    }
+                },
+                edges: {
+                    smooth: {
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    },
+                    arrows: 'to',
+                    color: {
+                        color: 'var(--vscode-editor-foreground)',
+                        highlight: 'var(--vscode-editor-foreground)',
+                        hover: 'var(--vscode-editor-foreground)'
+                    },
+                    font: {
+                        color: 'var(--vscode-editor-foreground)',
+                        align: 'middle'
+                    }
+                },
+                physics: {
+                    enabled: true,
+                    hierarchicalRepulsion: {
+                        nodeDistance: 150
+                    },
+                    solver: 'hierarchicalRepulsion'
+                },
+                manipulation: {
+                    enabled: false
+                }
+            };
+            const network = new vis.Network(container, data, options);
+
+            // Handle messages from the extension
+            window.addEventListener('message', event => {
+                const message = event.data;
+                switch (message.type) {
+                    case 'updateData':
+                        nodes.clear();
+                        edges.clear();
+                        nodes.add(message.nodes);
+                        edges.add(message.edges);
+                        break;
+                }
+            });
+
+            // Handle network events
+            network.on('dragEnd', function(params) {
+                if (params.nodes.length > 0) {
+                    const nodePositions = {};
+                    params.nodes.forEach(nodeId => {
+                        const position = network.getPositions([nodeId])[nodeId];
+                        nodePositions[nodeId] = position;
+                    });
+                    // Send node positions back to extension
+                    vscode.postMessage({
+                        type: 'nodePositionChanged',
+                        positions: nodePositions
+                    });
+                }
+            });
+        })();
+    </script>
+</body>
+</html>`;
     }
 
     private _loadData() {
