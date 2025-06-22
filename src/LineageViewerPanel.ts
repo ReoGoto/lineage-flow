@@ -1,6 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import { LineageDataManager } from './model/LineageDataManager';
+import { LineageData } from './model/types';
+import { CsvImporter } from './model/CsvImporter';
 
 function getNonce() {
     return crypto.randomBytes(16).toString('base64');
@@ -10,9 +14,11 @@ export class LineageViewerPanel {
     public static currentPanel: LineageViewerPanel | undefined;
     private readonly _panel: vscode.WebviewPanel;
     private _disposables: vscode.Disposable[] = [];
+    private readonly _dataManager: LineageDataManager;
 
     private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
         this._panel = panel;
+        this._dataManager = LineageDataManager.getInstance();
 
         // Set the webview's initial html content
         this._panel.webview.html = this._getWebviewContent(this._panel.webview, extensionUri);
@@ -23,11 +29,46 @@ export class LineageViewerPanel {
 
         // Handle messages from the webview
         this._panel.webview.onDidReceiveMessage(
-            message => {
+            async message => {
                 switch (message.type) {
                     case 'nodePositionChanged':
-                        // TODO: Save node positions to JSON file
-                        console.log('Node positions changed:', message.positions);
+                        // Update node positions in the data manager
+                        Object.entries(message.positions).forEach(([nodeId, position]) => {
+                            this._dataManager.updateNodePosition(nodeId, position as any);
+                        });
+                        break;
+                    case 'editNodeLabel':
+                        // Show input box for editing node label
+                        const newLabel = await vscode.window.showInputBox({
+                            value: message.currentLabel,
+                            prompt: `Enter new ${message.group} name`,
+                            validateInput: text => {
+                                return text.trim() ? null : 'Name cannot be empty';
+                            }
+                        });
+                        
+                        if (newLabel !== undefined) {
+                            this._dataManager.updateNodeLabel(message.nodeId, newLabel.trim());
+                            this._panel.webview.postMessage({
+                                type: 'updateNodeLabel',
+                                nodeId: message.nodeId,
+                                newLabel: newLabel.trim()
+                            });
+                        }
+                        break;
+                    case 'edgeAdded':
+                        this._dataManager.addEdge(message.edge);
+                        break;
+                    case 'edgeDeleted':
+                        this._dataManager.removeEdge(message.edge.id);
+                        break;
+                    case 'exportImage':
+                        // Handle image export
+                        if (message.imageData) {
+                            const data = message.imageData.replace(/^data:image\/\w+;base64,/, '');
+                            await fs.promises.writeFile(message.path, Buffer.from(data, 'base64'));
+                            vscode.window.showInformationMessage(`Diagram exported to ${message.path}`);
+                        }
                         break;
                 }
             },
@@ -39,7 +80,19 @@ export class LineageViewerPanel {
         this._loadData();
     }
 
-    public static createOrShow(extensionUri: vscode.Uri) {
+    public get webview(): vscode.Webview {
+        return this._panel.webview;
+    }
+
+    public updateData(data: LineageData) {
+        this._panel.webview.postMessage({
+            type: 'updateData',
+            nodes: data.nodes,
+            edges: data.edges
+        });
+    }
+
+    public static createOrShow(extensionUri: vscode.Uri): LineageViewerPanel {
         const column = vscode.window.activeTextEditor
             ? vscode.window.activeTextEditor.viewColumn
             : undefined;
@@ -47,7 +100,7 @@ export class LineageViewerPanel {
         // If we already have a panel, show it
         if (LineageViewerPanel.currentPanel) {
             LineageViewerPanel.currentPanel._panel.reveal(column);
-            return;
+            return LineageViewerPanel.currentPanel;
         }
 
         // Otherwise, create a new panel
@@ -65,6 +118,7 @@ export class LineageViewerPanel {
         );
 
         LineageViewerPanel.currentPanel = new LineageViewerPanel(panel, extensionUri);
+        return LineageViewerPanel.currentPanel;
     }
 
     private _getWebviewContent(webview: vscode.Webview, extensionUri: vscode.Uri): string {
@@ -80,7 +134,7 @@ export class LineageViewerPanel {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval' 'unsafe-inline' 'nonce-${nonce}';">
     <title>Data Lineage Viewer</title>
     <script nonce="${nonce}" type="text/javascript" src="${visNetworkUri}"></script>
     <style>
@@ -141,15 +195,68 @@ export class LineageViewerPanel {
                         align: 'middle'
                     }
                 },
+                groups: {
+                    table: {
+                        shape: 'box',
+                        color: {
+                            background: 'var(--vscode-editor-background)',
+                            border: 'var(--vscode-editor-foreground)',
+                            highlight: {
+                                background: 'var(--vscode-editor-background)',
+                                border: 'var(--vscode-editor-foreground)'
+                            }
+                        },
+                        borderWidth: 2,
+                        padding: 20
+                    },
+                    column: {
+                        shape: 'box',
+                        color: {
+                            background: 'var(--vscode-editor-background)',
+                            border: 'var(--vscode-editor-foreground)',
+                            highlight: {
+                                background: 'var(--vscode-editor-selectionBackground)',
+                                border: 'var(--vscode-editor-foreground)'
+                            }
+                        },
+                        borderWidth: 1
+                    }
+                },
                 physics: {
                     enabled: true,
                     hierarchicalRepulsion: {
-                        nodeDistance: 150
+                        nodeDistance: 150,
+                        avoidOverlap: 1
                     },
                     solver: 'hierarchicalRepulsion'
                 },
                 manipulation: {
-                    enabled: false
+                    enabled: true,
+                    addNode: false,
+                    addEdge: function(edgeData, callback) {
+                        // Only allow connections between columns
+                        const fromNode = nodes.get(edgeData.from);
+                        const toNode = nodes.get(edgeData.to);
+                        if (fromNode.group === 'column' && toNode.group === 'column') {
+                            edgeData.id = 'E' + Date.now();
+                            callback(edgeData);
+                            // Notify the extension about the new edge
+                            vscode.postMessage({
+                                type: 'edgeAdded',
+                                edge: edgeData
+                            });
+                        }
+                    },
+                    deleteNode: false,
+                    deleteEdge: function(edgeData, callback) {
+                        callback(edgeData);
+                        // Notify the extension about the deleted edge
+                        vscode.postMessage({
+                            type: 'edgeDeleted',
+                            edge: edgeData
+                        });
+                    },
+                    editEdge: false
                 }
             };
             const network = new vis.Network(container, data, options);
@@ -164,21 +271,132 @@ export class LineageViewerPanel {
                         nodes.add(message.nodes);
                         edges.add(message.edges);
                         break;
+                    case 'updateNodeLabel':
+                        const node = nodes.get(message.nodeId);
+                        if (node) {
+                            node.label = message.newLabel;
+                            nodes.update(node);
+                        }
+                        break;
+                    case 'exportImage':
+                        // Get network canvas
+                        const canvas = container.getElementsByTagName('canvas')[0];
+                        if (canvas) {
+                            let imageData;
+                            if (message.format === 'png') {
+                                imageData = canvas.toDataURL('image/png');
+                            } else if (message.format === 'svg') {
+                                // Get SVG data
+                                const svgData = network.getSVGString();
+                                imageData = 'data:image/svg+xml;base64,' + btoa(svgData);
+                            }
+                            
+                            if (imageData) {
+                                vscode.postMessage({
+                                    type: 'exportImage',
+                                    imageData: imageData,
+                                    path: message.path
+                                });
+                            }
+                        }
+                        break;
                 }
             });
 
             // Handle network events
+            network.on('dragStart', function(params) {
+                if (params.nodes.length > 0) {
+                    // Get the first selected node
+                    const nodeId = params.nodes[0];
+                    const node = nodes.get(nodeId);
+                    
+                    if (node.group === 'table') {
+                        // When dragging a table, find all its columns
+                        const columns = nodes.get().filter(n => n.parent === nodeId);
+                        columns.forEach(column => {
+                            // Store the initial relative position of each column
+                            const tablePos = network.getPositions([nodeId])[nodeId];
+                            const columnPos = network.getPositions([column.id])[column.id];
+                            column._relativePos = {
+                                x: columnPos.x - tablePos.x,
+                                y: columnPos.y - tablePos.y
+                            };
+                        });
+                    }
+                }
+            });
+
+            network.on('dragging', function(params) {
+                if (params.nodes.length > 0) {
+                    // Get the first selected node
+                    const nodeId = params.nodes[0];
+                    const node = nodes.get(nodeId);
+                    
+                    if (node.group === 'table') {
+                        // When dragging a table, update its columns' positions
+                        const columns = nodes.get().filter(n => n.parent === nodeId);
+                        const tablePos = network.getPositions([nodeId])[nodeId];
+                        
+                        columns.forEach(column => {
+                            if (column._relativePos) {
+                                network.moveNode(column.id, 
+                                    tablePos.x + column._relativePos.x,
+                                    tablePos.y + column._relativePos.y);
+                            }
+                        });
+                    }
+                }
+            });
+
             network.on('dragEnd', function(params) {
                 if (params.nodes.length > 0) {
-                    const nodePositions = {};
-                    params.nodes.forEach(nodeId => {
-                        const position = network.getPositions([nodeId])[nodeId];
-                        nodePositions[nodeId] = position;
-                    });
-                    // Send node positions back to extension
+                    const nodeId = params.nodes[0];
+                    const node = nodes.get(nodeId);
+                    const position = network.getPositions([nodeId])[nodeId];
+                    
+                    if (node.group === 'table') {
+                        // When a table drag ends, update all positions
+                        const columns = nodes.get().filter(n => n.parent === nodeId);
+                        const positions = {
+                            [nodeId]: position
+                        };
+                        
+                        columns.forEach(column => {
+                            const columnPos = network.getPositions([column.id])[column.id];
+                            positions[column.id] = columnPos;
+                            // Clean up the temporary relative position
+                            delete column._relativePos;
+                        });
+
+                        // Send all updated positions back to extension
+                        vscode.postMessage({
+                            type: 'nodePositionChanged',
+                            positions: positions
+                        });
+                    } else if (node.group === 'column') {
+                        // When a column drag ends, just update its position
+                        vscode.postMessage({
+                            type: 'nodePositionChanged',
+                            positions: {
+                                [nodeId]: position
+                            }
+                        });
+                    }
+                }
+            });
+
+            // Handle double click for editing labels
+            network.on('doubleClick', function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    const node = nodes.get(nodeId);
+                    
+                    // Send edit request to extension
                     vscode.postMessage({
-                        type: 'nodePositionChanged',
-                        positions: nodePositions
+                        type: 'editNodeLabel',
+                        nodeId: nodeId,
+                        currentLabel: node.label,
+                        group: node.group
                     });
                 }
             });
@@ -189,19 +407,78 @@ export class LineageViewerPanel {
     }
 
     private _loadData() {
-        // Sample data for testing
-        const data = {
-            nodes: [
-                { id: 'T1', label: 'Table1', group: 'table' },
-                { id: 'C1_1', label: 'Column1_1', group: 'column' },
-                { id: 'C1_2', label: 'Column1_2', group: 'column' },
-                { id: 'T2', label: 'Table2', group: 'table' },
-                { id: 'C2_1', label: 'Column2_1', group: 'column' },
-            ],
-            edges: [
-                { id: 'E1', from: 'C1_1', to: 'C2_1', label: 'Sample transformation' }
-            ]
-        };
+        const data = this._dataManager.getData();
+        if (data.nodes.length === 0) {
+            // Load sample data if no data exists
+            data.nodes = [
+                // Table 1 and its columns
+                { 
+                    id: 'T1', 
+                    label: 'Table1', 
+                    group: 'table',
+                    fixed: {
+                        x: false,
+                        y: false
+                    }
+                },
+                { 
+                    id: 'C1_1', 
+                    label: 'Column1_1', 
+                    group: 'column',
+                    parent: 'T1',
+                    physics: false,
+                    fixed: {
+                        x: true,
+                        y: true
+                    }
+                },
+                { 
+                    id: 'C1_2', 
+                    label: 'Column1_2', 
+                    group: 'column',
+                    parent: 'T1',
+                    physics: false,
+                    fixed: {
+                        x: true,
+                        y: true
+                    }
+                },
+                // Table 2 and its columns
+                { 
+                    id: 'T2', 
+                    label: 'Table2', 
+                    group: 'table',
+                    fixed: {
+                        x: false,
+                        y: false
+                    }
+                },
+                { 
+                    id: 'C2_1', 
+                    label: 'Column2_1', 
+                    group: 'column',
+                    parent: 'T2',
+                    physics: false,
+                    fixed: {
+                        x: true,
+                        y: true
+                    }
+                }
+            ];
+            data.edges = [
+                { 
+                    id: 'E1', 
+                    from: 'C1_1', 
+                    to: 'C2_1', 
+                    label: 'Sample transformation',
+                    arrows: 'to',
+                    smooth: {
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    }
+                }
+            ];
+        }
 
         this._panel.webview.postMessage({
             type: 'updateData',
