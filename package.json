@@ -9,13 +9,29 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:lineage-flow.openLineageViewer",
+    "onCommand:lineage-flow.importFromCsv",
+    "onCommand:lineage-flow.exportToImage"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "lineage-flow.helloWorld",
-        "title": "Hello World"
+        "command": "lineage-flow.openLineageViewer",
+        "title": "Lineage Flow: Open Data Lineage Viewer",
+        "category": "Lineage Flow"
+      },
+      {
+        "command": "lineage-flow.importFromCsv",
+        "title": "Lineage Flow: Import Tables/Columns from CSV",
+        "category": "Lineage Flow"
+      },
+      {
+        "command": "lineage-flow.exportToImage",
+        "title": "Lineage Flow: Export Diagram",
+        "category": "Lineage Flow"
       }
     ]
   },
@@ -27,15 +43,24 @@
     "lint": "eslint src",
     "test": "vscode-test"
   },
+  "dependencies": {
+    "csv-parse": "^5.6.0",
+    "vis-network": "^9.1.9"
+  },
   "devDependencies": {
-    "@types/vscode": "^1.101.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
+    "@types/vscode": "^1.101.0",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
-    "eslint": "^9.25.1",
-    "typescript": "^5.8.3",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.5.2"
-  }
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.25.1",
+    "typescript": "^5.8.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ReoGoto/lineage-flow.git"
+  },
+  "license": "MIT"
 }

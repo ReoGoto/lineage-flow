@@ -1,71 +1,71 @@
-# lineage-flow README
+# Data Lineage Viewer (lineage-flow)
 
-This is the README for your extension "lineage-flow". After writing up a brief description, we recommend including the following sections.
+A VS Code extension for visualizing, creating, and managing column-level data lineage diagrams with an intuitive UI. This extension helps data engineers, analysts, and developers understand and maintain data dependencies in their projects.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
-
-For example if there is an image subfolder under your extension project workspace:
-
-\!\[feature X\]\(images/feature-x.png\)
-
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- Interactive visualization of data lineage using vis.js Network
+- Drag-and-drop interface for arranging tables and columns
+- Automatic edge (line) following when moving nodes
+- Support for curved edges with directional arrows
+- Visual distinction between table and column nodes
+- Theme-aware styling that matches your VS Code theme
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- Visual Studio Code version 1.101.0 or higher
 
-## Extension Settings
+## Installation
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/ReoGoto/lineage-flow.git
+   ```
 
-For example:
+2. Install dependencies:
+   ```bash
+   cd lineage-flow
+   npm install
+   ```
 
-This extension contributes the following settings:
+3. Package the extension:
+   ```bash
+   npm install -g @vscode/vsce
+   vsce package
+   ```
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+4. Install the extension in VS Code:
+   - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (macOS)
+   - Type "Install from VSIX"
+   - Select the generated `.vsix` file
+
+## Usage
+
+1. Open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`)
+2. Type "Open Data Lineage Viewer" and select the command
+3. The lineage viewer will open in a new panel
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Currently in early development (Phase 1)
+- Sample data is hardcoded for testing purposes
+- CSV import and JSON persistence not yet implemented
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.1
 
-### 1.0.0
+Initial development release with basic functionality:
+- Basic VS Code extension structure
+- vis.js Network integration
+- Webview panel for lineage graph display
+- Basic node and edge rendering with sample data
+- Support for dragging nodes with automatic edge following
 
-Initial release of ...
+## Contributing
 
-### 1.0.1
+This project is under active development. See the [GitHub repository](https://github.com/ReoGoto/lineage-flow) for more information.
 
-Fixed issue #.
+## License
 
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+[MIT License](LICENSE)
