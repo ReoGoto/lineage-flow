@@ -4,7 +4,6 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { LineageDataManager } from './model/LineageDataManager';
 import { LineageData } from './model/types';
-import { CsvImporter } from './model/CsvImporter';
 
 function getNonce() {
     return crypto.randomBytes(16).toString('base64');
@@ -34,7 +33,14 @@ export class LineageViewerPanel {
                     case 'nodePositionChanged':
                         // Update node positions in the data manager
                         Object.entries(message.positions).forEach(([nodeId, position]) => {
-                            this._dataManager.updateNodePosition(nodeId, position as any);
+                            const node = this._dataManager.getVisData().nodes.find(n => n.id === nodeId);
+                            if (node) {
+                                if (node.group === 'table') {
+                                    this._dataManager.updateTablePosition(nodeId, position as any);
+                                } else if (node.parent) {
+                                    this._dataManager.updateColumnPosition(node.parent, nodeId, position as any);
+                                }
+                            }
                         });
                         break;
                     case 'editNodeLabel':
@@ -48,7 +54,14 @@ export class LineageViewerPanel {
                         });
                         
                         if (newLabel !== undefined) {
-                            this._dataManager.updateNodeLabel(message.nodeId, newLabel.trim());
+                            const node = this._dataManager.getVisData().nodes.find(n => n.id === message.nodeId);
+                            if (node) {
+                                if (node.group === 'table') {
+                                    this._dataManager.updateTableName(message.nodeId, newLabel.trim());
+                                } else if (node.parent) {
+                                    this._dataManager.updateColumnName(node.parent, message.nodeId, newLabel.trim());
+                                }
+                            }
                             this._panel.webview.postMessage({
                                 type: 'updateNodeLabel',
                                 nodeId: message.nodeId,
@@ -57,10 +70,16 @@ export class LineageViewerPanel {
                         }
                         break;
                     case 'edgeAdded':
-                        this._dataManager.addEdge(message.edge);
+                        this._dataManager.addLineage({
+                            id: message.edge.id,
+                            source: message.edge.from,
+                            target: message.edge.to,
+                            description: message.edge.label,
+                            arrows: message.edge.arrows
+                        });
                         break;
                     case 'edgeDeleted':
-                        this._dataManager.removeEdge(message.edge.id);
+                        this._dataManager.removeLineage(message.edge.id);
                         break;
                     case 'exportImage':
                         // Handle image export
@@ -85,10 +104,11 @@ export class LineageViewerPanel {
     }
 
     public updateData(data: LineageData) {
+        const visData = this._dataManager.getVisData();
         this._panel.webview.postMessage({
             type: 'updateData',
-            nodes: data.nodes,
-            edges: data.edges
+            nodes: visData.nodes,
+            edges: visData.edges
         });
     }
 
@@ -408,82 +428,53 @@ export class LineageViewerPanel {
 
     private _loadData() {
         const data = this._dataManager.getData();
-        if (data.nodes.length === 0) {
+        if (data.tables.length === 0) {
             // Load sample data if no data exists
-            data.nodes = [
-                // Table 1 and its columns
-                { 
-                    id: 'T1', 
-                    label: 'Table1', 
-                    group: 'table',
-                    fixed: {
-                        x: false,
-                        y: false
-                    }
+            data.tables = [
+                {
+                    id: 'T1',
+                    name: 'Table1',
+                    position: { x: 0, y: 0 },
+                    columns: [
+                        {
+                            id: 'C1_1',
+                            name: 'Column1_1'
+                        },
+                        {
+                            id: 'C1_2',
+                            name: 'Column1_2'
+                        }
+                    ]
                 },
-                { 
-                    id: 'C1_1', 
-                    label: 'Column1_1', 
-                    group: 'column',
-                    parent: 'T1',
-                    physics: false,
-                    fixed: {
-                        x: true,
-                        y: true
-                    }
-                },
-                { 
-                    id: 'C1_2', 
-                    label: 'Column1_2', 
-                    group: 'column',
-                    parent: 'T1',
-                    physics: false,
-                    fixed: {
-                        x: true,
-                        y: true
-                    }
-                },
-                // Table 2 and its columns
-                { 
-                    id: 'T2', 
-                    label: 'Table2', 
-                    group: 'table',
-                    fixed: {
-                        x: false,
-                        y: false
-                    }
-                },
-                { 
-                    id: 'C2_1', 
-                    label: 'Column2_1', 
-                    group: 'column',
-                    parent: 'T2',
-                    physics: false,
-                    fixed: {
-                        x: true,
-                        y: true
-                    }
+                {
+                    id: 'T2',
+                    name: 'Table2',
+                    position: { x: 300, y: 0 },
+                    columns: [
+                        {
+                            id: 'C2_1',
+                            name: 'Column2_1'
+                        }
+                    ]
                 }
             ];
-            data.edges = [
-                { 
-                    id: 'E1', 
-                    from: 'C1_1', 
-                    to: 'C2_1', 
-                    label: 'Sample transformation',
-                    arrows: 'to',
-                    smooth: {
-                        type: 'curvedCW',
-                        roundness: 0.2
-                    }
+
+            data.lineage = [
+                {
+                    id: 'E1',
+                    source: 'C1_1',
+                    target: 'C2_1',
+                    description: 'Sample transformation',
+                    arrows: 'to'
                 }
             ];
         }
 
+        const visData = this._dataManager.getVisData();
         this._panel.webview.postMessage({
             type: 'updateData',
-            nodes: data.nodes,
-            edges: data.edges
+            nodes: visData.nodes,
+            edges: visData.edges
         });
     }
 

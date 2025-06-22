@@ -10,6 +10,7 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:lineage-flow.openLineageViewer",
     "onCommand:lineage-flow.importFromCsv",
     "onCommand:lineage-flow.exportToImage"
@@ -19,15 +20,18 @@
     "commands": [
       {
         "command": "lineage-flow.openLineageViewer",
-        "title": "Open Data Lineage Viewer"
+        "title": "Lineage Flow: Open Data Lineage Viewer",
+        "category": "Lineage Flow"
       },
       {
         "command": "lineage-flow.importFromCsv",
-        "title": "Import Tables/Columns from CSV"
+        "title": "Lineage Flow: Import Tables/Columns from CSV",
+        "category": "Lineage Flow"
       },
       {
         "command": "lineage-flow.exportToImage",
-        "title": "Export Lineage Diagram"
+        "title": "Lineage Flow: Export Diagram",
+        "category": "Lineage Flow"
       }
     ]
   },

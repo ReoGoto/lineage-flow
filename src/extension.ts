@@ -2,30 +2,42 @@ import * as vscode from 'vscode';
 import { LineageViewerPanel } from './LineageViewerPanel';
 import { LineageDataManager } from './model/LineageDataManager';
 import { ImageExporter } from './export/ImageExporter';
-import { CsvImporter } from './model/CsvImporter';
+
+const outputChannel = vscode.window.createOutputChannel('Lineage Flow');
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('Extension "lineage-flow" is now active');
+    outputChannel.appendLine('Extension "lineage-flow" is now active');
+    outputChannel.appendLine('Extension path: ' + context.extensionPath);
+    outputChannel.show();
 
     // Register commands
     context.subscriptions.push(
         vscode.commands.registerCommand('lineage-flow.openLineageViewer', () => {
-            LineageViewerPanel.createOrShow(context.extensionUri);
+            outputChannel.appendLine('Executing command: openLineageViewer');
+            try {
+                const panel = LineageViewerPanel.createOrShow(context.extensionUri);
+                outputChannel.appendLine('Viewer panel created successfully');
+            } catch (error) {
+                outputChannel.appendLine('Error creating viewer panel: ' + (error as Error).message);
+                outputChannel.appendLine('Stack trace: ' + (error as Error).stack);
+                throw error;
+            }
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('lineage-flow.importFromCsv', async () => {
             try {
-                const importedData = await CsvImporter.importFromCsv();
+                const dataManager = LineageDataManager.getInstance();
+                await dataManager.importFromCsv();
                 
                 // Update the viewer if it's open
                 if (LineageViewerPanel.currentPanel) {
-                    LineageViewerPanel.currentPanel.updateData(importedData);
+                    LineageViewerPanel.currentPanel.updateData(dataManager.getData());
                 } else {
                     // Open the viewer if it's not open
                     const panel = LineageViewerPanel.createOrShow(context.extensionUri);
-                    panel.updateData(importedData);
+                    panel.updateData(dataManager.getData());
                 }
 
                 vscode.window.showInformationMessage('CSV imported successfully');
